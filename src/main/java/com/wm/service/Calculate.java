@@ -9,8 +9,10 @@ import com.wm.entity.Denominations;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.DoubleSummaryStatistics;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -43,6 +45,9 @@ public class Calculate {
 
         List<Denominations> denoms = getDenominations();
 
+        DoubleSummaryStatistics stats = denoms.stream().map(d -> d.getCuantity() * d.getValue())
+                .collect(Collectors.summarizingDouble(Double::valueOf));
+
         Optional<Denominations> nom = denoms.stream().sorted(Comparator.comparingDouble(Denominations::getValue))
                 .filter(n -> n.getCuantity() > 0)
                 .reduce((n1, n2) -> {
@@ -61,19 +66,24 @@ public class Calculate {
             double cashLeft = cashToServe - smallChange;
             if (cashLeft > 0) {
                 denoms.sort(Comparator.comparingDouble(Denominations::getValue).reversed());
+                int totalSum = (int) stats.getSum();
                 for (Denominations nom1 : denoms) {
                     if (nom1.getCuantity() > 0 && cashLeft >= nom1.getValue()) {
+                        int general = (int) ((nom1.getCuantity() * nom1.getValue()) * 100 / totalSum);
                         int needed = (int) (cashLeft / nom1.getValue());
-                        int percent = needed * 100 / nom1.getCuantity();
-                        while (percent > 40 && needed > 0) {
+                        int percent = getPercent(cashLeft, nom1, needed);
+                        int limit = (int) ((cashLeft * 100) / totalSum);
+                        while (percent >= limit && needed > 0
+                                && needed <= nom1.getCuantity() && general > 5) {
                             needed--;
-                            percent = needed * 100 / nom1.getCuantity();
+                            nom1.setCuantity(nom1.getCuantity() - 1);
+                            cashLeft -= nom1.getValue();
+                            totalSum -= nom1.getValue();
+                            if (needed > 0) {
+                                percent = getPercent(cashLeft, nom1, needed);
+                            }
                         }
-                        if (needed > 0) {
-                            nom1.setCuantity(nom1.getCuantity() - needed);
-                            cashLeft -= needed * nom1.getValue();
-                            update.add(nom1);
-                        }
+                        update.add(nom1);
                     }
                 }
             }
@@ -83,6 +93,10 @@ public class Calculate {
             }
         }
         return 1d;
+    }
+
+    private int getPercent(double cash, Denominations n, int needed) {
+        return needed + needed * 100 / n.getCuantity();
     }
 
     private List<Denominations> getDenominations() throws FileNotFoundException {
